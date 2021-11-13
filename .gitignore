@@ -1,0 +1,7 @@
+**.code-workspace
+**.h5
+**.ipynb
+.ipynb_checkpoints
+.vscode
+/result**
+__pycache__
