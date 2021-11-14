@@ -35,55 +35,64 @@ class PhotonLibrary(object):
         self._max[0] += 10
         self._min[0] += 10
 
-    def LoadData(self, transform=True, eps=1e-10):
+    def LoadData(self, transform=True, eps=1e-7):
         '''
         Load photon library visibility data. Apply scale transform if specified
         '''
         data = self._vis
         if transform:
-            v_min = -np.log10(1.+eps)
-            v_max = -np.log10(eps)
-            data = (-np.log10(data+eps) - v_min) / (v_max - v_min)
-            data = data.reshape((-1, 1))
+            v_min = -np.log(1.+eps)
+            v_max = -np.log(eps)
+            data = (-np.log(data+eps) - v_min) / (v_max - v_min)
+            data = np.expand_dims(data, -1)
 
         return data
         
     def LoadCoord(self, slice = -1, normalize=True):
         '''
-        Load input coord for training
+        Load input coord for training/evaluation
         '''
         vox_ids = np.arange(self._vis.shape[0])
-        if slice == -1:
-          indices = np.repeat(vox_ids, 180)
-        else:
-          vox_ids = vox_ids.reshape((394, 77, 74))[:, :, slice].flatten()
-          indices = np.repeat(vox_ids, 180)
         
-        return self.CoordFromIdx(indices, normalize=normalize)
+        return self.CoordFromVoxID(vox_ids, normalize=normalize)
 
-    def CoordFromIdx(self, idx, normalize=True):
+    def CoordFromVoxID(self, idx, normalize=True):
         '''
-        Load get input coord from index
+        Load input coord from vox id 
         '''
         if np.isscalar(idx):
           idx = np.array([idx])
         
-        # # (3, 180) model
-        # pos_coord = self.VoxID2Coord(idx)
-        # if normalize:
-        #     pos_coord = 2 * (pos_coord - 0.5)
-        # return pos_coord.squeeze()
-        
-        vox_id = idx % self._vis.shape[0]
-        pmt_id = idx // self._vis.shape[0]
-        pos_coord = self.VoxID2Coord(vox_id)
-        pmt_coord = (self._pmt_pos[pmt_id] - self._min) / (self._max - self._min)
+        pos_coord = self.VoxID2Coord(idx)
+        pmt_coord = (self._pmt_pos - self._min) / (self._max - self._min)
         
         if normalize:
             pos_coord = 2 * (pos_coord - 0.5)
             pmt_coord = 2 * (pmt_coord - 0.5)
         
-        return np.concatenate((pos_coord, pmt_coord), -1).squeeze()
+        pos_coord = np.concatenate((np.broadcast_to(np.expand_dims(pos_coord, 1), \
+            (pos_coord.shape[0], pmt_coord.shape[0], pos_coord.shape[1])), \
+            np.broadcast_to(pmt_coord, (pos_coord.shape[0], pmt_coord.shape[0], pmt_coord.shape[1]))), -1)
+        
+        return pos_coord.squeeze()
+    
+    def CoordFromIdx(self, idx, normalize=True):
+        '''
+        Load input coord from data loader index
+        '''
+        if np.isscalar(idx):
+          idx = np.array([idx])
+        
+        pos_coord = self.VoxID2Coord(idx)
+        pmt_coord = (self._pmt_pos - self._min) / (self._max - self._min)
+        
+        if normalize:
+            pos_coord = 2 * (pos_coord - 0.5)
+            pmt_coord = 2 * (pmt_coord - 0.5)
+        
+        pos_coord = np.concatenate((np.broadcast_to(pos_coord, (180, 3)), pmt_coord), -1)
+        
+        return pos_coord.squeeze()
 
     def UniformSample(self,num_points=32,use_numpy=True,use_world_coordinate=False):
         '''

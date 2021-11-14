@@ -43,6 +43,7 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
         for step, (model_input, gt) in enumerate(train_dataloader):
             
             model_input = {key: value.cuda() for key, value in model_input.items()}
+            gt = {key: value.cuda() for key, value in gt.items()}
             model_output = model(model_input['coords'])
             
             losses = loss_fn(weight, model_output, gt)

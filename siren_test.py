@@ -42,11 +42,8 @@ class PlibSiren():
         plib = PhotonLibrary()
         data = plib.LoadData()
 
-        print('About to call cuda for first time...')
-        data = torch.from_numpy(data.astype(np.float32)).cuda()
         # Make weights
-        weight = utils.make_weights(data.flatten(), self.weight_bin_size)
-        weight.cuda()
+        weight = utils.make_weights(torch.from_numpy(data.flatten()).cuda(), self.weight_bin_size)
         
         print('Assigning Model...')
         model = modules.Siren(in_features=self.in_features, out_features=self.out_features, \
@@ -57,7 +54,7 @@ class PlibSiren():
 
         print('Prepare dataloader')
         train_data = utils.DataWrapper(plib, data)
-        dataloader = DataLoader(train_data, shuffle=True, batch_size=self.batch_size, pin_memory=False, num_workers=0)
+        dataloader = DataLoader(train_data, shuffle=True, batch_size=self.batch_size, pin_memory=False, num_workers=4)
         
         loss = partial(loss_functions.image_mse)
 

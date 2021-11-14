@@ -11,8 +11,8 @@ Model:
   omega: 30
 Training:
   weight_bin_size: 8
-  batch_size: 524288
-  num_epochs: 1500
+  batch_size: 5772
+  num_epochs: 1000
   learning_rate: 5.e-5
-  steps_til_summary: 1000
+  steps_til_summary: 500
   epochs_til_checkpoint: 100
