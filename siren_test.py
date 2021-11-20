@@ -22,6 +22,7 @@ class PlibSiren():
         self.output_dir = os.path.join(cfg['FilePath']['output_dir'], cfg['FilePath']['experiment_name'])
         self.plib_file = cfg['FilePath']['plib_file']
         self.pmt_file = cfg['FilePath']['pmt_file']
+        self.lut_file = cfg['FilePath']['lut_file']
 
         self.in_features = cfg['Model']['in_features']
         self.out_features = cfg['Model']['out_features']
@@ -29,7 +30,6 @@ class PlibSiren():
         self.hidden_layers = cfg['Model']['hidden_layers']
         self.omega = cfg['Model']['omega']
 
-        self.weight_bin_size = cfg['Training']['weight_bin_size']
         self.batch_size = cfg['Training']['batch_size']
         self.num_epochs = cfg['Training']['num_epochs']
         self.lr = cfg['Training']['learning_rate']
@@ -39,11 +39,8 @@ class PlibSiren():
     def train(self):
         # Load plib dataset
         print('Load data ...')
-        plib = PhotonLibrary()
+        plib = PhotonLibrary(self.plib_file, self.pmt_file, self.lut_file)
         data = plib.LoadData()
-
-        # Make weights
-        weight = utils.make_weights(torch.from_numpy(data.flatten()).cuda(), self.weight_bin_size)
         
         print('Assigning Model...')
         model = modules.Siren(in_features=self.in_features, out_features=self.out_features, \
@@ -61,7 +58,7 @@ class PlibSiren():
         print('Training...')
         training.train(model=model, train_dataloader=dataloader, epochs=self.num_epochs, lr=self.lr,
                 steps_til_summary=self.steps_til_summary, epochs_til_checkpoint=self.epochs_til_ckpt,
-                model_dir=self.output_dir, loss_fn=loss, weight = weight)
+                model_dir=self.output_dir, loss_fn=loss)
 
 if __name__=="__main__":
     cfg_file = 'siren_cfg.yml'

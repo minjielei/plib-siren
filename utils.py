@@ -14,7 +14,8 @@ class DataWrapper(DataLoader):
     
     def __getitem__(self, idx):
         coords = self.plib.CoordFromIdx(idx)
-        in_dict = {'idx': idx, 'coords': coords}
+        weights = self.plib.WeightFromIdx(idx)
+        in_dict = {'idx': idx, 'coords': coords, 'weights': weights}
         gt_dict = {'idx': idx, 'coords': self.gt[idx]}
 
         return in_dict, gt_dict

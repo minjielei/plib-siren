@@ -5,3 +5,4 @@
 .vscode
 /result**
 __pycache__
+plib_data

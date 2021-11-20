@@ -1,17 +1,17 @@
 FilePath:
-  output_dir: result_111221
-  experiment_name: omega30_6_1
-  plib_file: plib.h5
-  pmt_file: pmt_loc.csv
+  output_dir: result_112021
+  experiment_name: omega30_3_180
+  plib_file: plib_data/plib_combined.h5
+  pmt_file: plib_data/pmt_loc.csv
+  lut_file: plib_data/lut_log10_1e-5.h5
 Model:
-  in_features: 6
-  out_features: 1
+  in_features: 3
+  out_features: 180
   hidden_features: 512
   hidden_layers: 5
   omega: 30
 Training:
-  weight_bin_size: 8
-  batch_size: 5772
+  batch_size: 65536
   num_epochs: 1000
   learning_rate: 5.e-5
   steps_til_summary: 500

@@ -5,7 +5,7 @@ import torch
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class PhotonLibrary(object):
-    def __init__(self, plib_file='plib.h5', pmt_file='pmt_loc.csv'):
+    def __init__(self, plib_file='plib.h5', pmt_file='pmt_loc.csv', lut_file=None):
         if not os.path.isfile(plib_file):
             print('Downloading photon library file... (>300MByte, may take minutes')
             os.system('curl -O https://www.nevis.columbia.edu/~kazuhiro/plib.h5 ./')
@@ -14,7 +14,7 @@ class PhotonLibrary(object):
             raise Exception
 
         with h5.File(plib_file,'r') as f:
-            self._vis  = np.array(f['vis'])
+            self._vis  = np.array(f['vis'], dtype=np.float32)
             self._min  = np.array(f['min'])
             self._max  = np.array(f['max'])
             self.shape = np.array(f['numvox'])
@@ -35,33 +35,52 @@ class PhotonLibrary(object):
         self._max[0] += 10
         self._min[0] += 10
 
-    def LoadData(self, transform=True, eps=1e-7):
+        # Load weighting look up table if provided
+        if lut_file:
+            with h5.File(lut_file,'r') as f:
+                self.lut = np.array(f['lut'])
+                self.bins = np.array(f['bins'])
+
+    def LoadData(self, transform=True, eps=1e-5):
         '''
         Load photon library visibility data. Apply scale transform if specified
         '''
         data = self._vis
         if transform:
-            v_min = -np.log(1.+eps)
-            v_max = -np.log(eps)
-            data = (-np.log(data+eps) - v_min) / (v_max - v_min)
-            data = np.expand_dims(data, -1)
+            data = self.DataTransform(data)
 
         return data
+
+    def DataTransform(self, data, eps=1e-5):
+        '''
+        Transform vis data to log scale for training
+        '''
+        v0 = np.log10(eps)
+        v1 = np.log10(1.+eps)
+        return (np.log10(data+eps) - v0) / (v1 - v0)
+
+    def DataTransformInv(self, data, eps=1e-5):
+        '''
+        Inverse log scale transform
+        '''
+        v0 = np.log10(eps)
+        v1 = np.log10(1.+eps)
+        return np.power(data * (v1 - v0) + v0, 10) - eps
         
-    def LoadCoord(self, slice = -1, normalize=True):
+    def LoadCoord(self, normalize=True, extend=False):
         '''
         Load input coord for training/evaluation
         '''
         vox_ids = np.arange(self._vis.shape[0])
         
-        return self.CoordFromVoxID(vox_ids, normalize=normalize)
+        return self.CoordFromVoxID(vox_ids, normalize=normalize, extend=extend)
 
-    def CoordFromVoxID(self, idx, normalize=True):
+    def CoordFromVoxID(self, idx, normalize=True, extend=False):
         '''
         Load input coord from vox id 
         '''
         if np.isscalar(idx):
-          idx = np.array([idx])
+            idx = np.array([idx])
         
         pos_coord = self.VoxID2Coord(idx)
         pmt_coord = (self._pmt_pos - self._min) / (self._max - self._min)
@@ -70,18 +89,19 @@ class PhotonLibrary(object):
             pos_coord = 2 * (pos_coord - 0.5)
             pmt_coord = 2 * (pmt_coord - 0.5)
         
-        pos_coord = np.concatenate((np.broadcast_to(np.expand_dims(pos_coord, 1), \
-            (pos_coord.shape[0], pmt_coord.shape[0], pos_coord.shape[1])), \
-            np.broadcast_to(pmt_coord, (pos_coord.shape[0], pmt_coord.shape[0], pmt_coord.shape[1]))), -1)
+        if extend:
+            pos_coord = np.concatenate((np.broadcast_to(np.expand_dims(pos_coord, 1), \
+                (pos_coord.shape[0], pmt_coord.shape[0], pos_coord.shape[1])), \
+                np.broadcast_to(pmt_coord, (pos_coord.shape[0], pmt_coord.shape[0], pmt_coord.shape[1]))), -1)
         
         return pos_coord.squeeze()
     
-    def CoordFromIdx(self, idx, normalize=True):
+    def CoordFromIdx(self, idx, normalize=True, extend=False):
         '''
         Load input coord from data loader index
         '''
         if np.isscalar(idx):
-          idx = np.array([idx])
+            idx = np.array([idx])
         
         pos_coord = self.VoxID2Coord(idx)
         pmt_coord = (self._pmt_pos - self._min) / (self._max - self._min)
@@ -90,7 +110,8 @@ class PhotonLibrary(object):
             pos_coord = 2 * (pos_coord - 0.5)
             pmt_coord = 2 * (pmt_coord - 0.5)
         
-        pos_coord = np.concatenate((np.broadcast_to(pos_coord, (180, 3)), pmt_coord), -1)
+        if extend:
+            pos_coord = np.concatenate((np.broadcast_to(pos_coord, (180, 3)), pmt_coord), -1)
         
         return pos_coord.squeeze()
 
@@ -206,3 +227,39 @@ class PhotonLibrary(object):
         '''
         var = abs(np.random.normal(1.0, bias, len(self._vis)))
         self._vis = self._vis * np.expand_dims(var, -1)
+
+    def NoiseAtVoxID(self, vid, delta = 2):
+        '''
+        Compute local visibility value fluctuation at vid
+        '''
+        if np.isscalar(vid):
+            vid = np.array(vid)
+        axis = self.VoxID2AxisID(vid)
+        xrange = np.arange(axis[0, 0]-delta, axis[0, 0]+delta+1).astype(int)
+        yrange = np.arange(axis[0, 1]-delta, axis[0, 1]+delta+1).astype(int)
+        zrange = np.arange(axis[0, 2]-delta, axis[0, 2]+delta+1).astype(int)
+        selection = self._vis.reshape((394, 77, 74, -1))[zrange, \
+            yrange, xrange, :].reshape((-1, 180))
+
+        return np.std(selection, axis=0) / (np.mean(selection, axis=0)+1e-9) * 100
+
+    def WeightFromIdx(self, vid):
+        '''
+        Weighting factor for data at vid based on the provided weight lut file
+        '''
+        vis = self.DataTransform(self.Visibility(vid))
+        xid = np.expand_dims(vid % 74, -1)
+        bin_id = np.digitize(vis, self.bins) - 1
+        batch_idx = (bin_id + np.concatenate((np.zeros(90), np.ones(90))) * \
+                len(self.bins) + xid * 2 * len(self.bins)).astype(int)
+
+        return self.lut[batch_idx]
+
+    def WeightFromIdxSingle(self, vid):
+        '''
+        Weighting factor for data at vid based on single version of weight lut file
+        '''
+        vis = self.DataTransform(self.Visibility(vid))
+        bin_id = np.digitize(vis, self.bins) - 1
+
+        return self.lut[bin_id]
