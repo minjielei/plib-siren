@@ -46,7 +46,7 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
             gt = {key: value.cuda() for key, value in gt.items()}
             model_output = model(model_input['coords'])
             
-            losses = loss_fn(model_input['weights'], model_output, gt)
+            losses = loss_fn(model_output, gt, model_input['weights'])
     
             train_loss = 0.
             for loss_name, loss in losses.items():

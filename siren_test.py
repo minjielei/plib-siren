@@ -29,6 +29,7 @@ class PlibSiren():
         self.hidden_features = cfg['Model']['hidden_features']
         self.hidden_layers = cfg['Model']['hidden_layers']
         self.omega = cfg['Model']['omega']
+        self.extend = (self.out_features == 1)
 
         self.batch_size = cfg['Training']['batch_size']
         self.num_epochs = cfg['Training']['num_epochs']
@@ -40,7 +41,6 @@ class PlibSiren():
         # Load plib dataset
         print('Load data ...')
         plib = PhotonLibrary(self.plib_file, self.pmt_file, self.lut_file)
-        data = plib.LoadData()
         
         print('Assigning Model...')
         model = modules.Siren(in_features=self.in_features, out_features=self.out_features, \
@@ -50,7 +50,7 @@ class PlibSiren():
         model.cuda()
 
         print('Prepare dataloader')
-        train_data = utils.DataWrapper(plib, data)
+        train_data = utils.DataWrapper(plib, extend=self.extend)
         dataloader = DataLoader(train_data, shuffle=True, batch_size=self.batch_size, pin_memory=False, num_workers=4)
         
         loss = partial(loss_functions.image_mse)

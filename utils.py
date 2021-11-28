@@ -5,17 +5,17 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
 class DataWrapper(DataLoader):
-    def __init__(self, plib, data):
+    def __init__(self, plib, extend=False):
         self.plib = plib
-        self.gt = data
+        self.coords = plib.LoadCoord(extend=extend)
+        self.gt = plib.LoadData(extend=extend)
         
     def __len__(self):
         return self.gt.shape[0]
     
     def __getitem__(self, idx):
-        coords = self.plib.CoordFromIdx(idx)
         weights = self.plib.WeightFromIdx(idx)
-        in_dict = {'idx': idx, 'coords': coords, 'weights': weights}
+        in_dict = {'idx': idx, 'coords': self.coords[idx], 'weights': weights}
         gt_dict = {'idx': idx, 'coords': self.gt[idx]}
 
         return in_dict, gt_dict

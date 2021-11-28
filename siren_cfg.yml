@@ -1,18 +1,18 @@
 FilePath:
-  output_dir: result_112021
-  experiment_name: omega30_3_180
+  output_dir: result_112721
+  experiment_name: siren1_5_512
   plib_file: plib_data/plib_combined.h5
   pmt_file: plib_data/pmt_loc.csv
-  lut_file: plib_data/lut_log10_1e-5.h5
+  lut_file: plib_data/lut_log10_1e-5_v2.h5
 Model:
-  in_features: 3
-  out_features: 180
+  in_features: 6
+  out_features: 1
   hidden_features: 512
   hidden_layers: 5
   omega: 30
 Training:
-  batch_size: 65536
-  num_epochs: 1000
-  learning_rate: 5.e-5
-  steps_til_summary: 500
+  batch_size: 4096
+  num_epochs: 1500
+  learning_rate: 5.e-6
+  steps_til_summary: 1000
   epochs_til_checkpoint: 100

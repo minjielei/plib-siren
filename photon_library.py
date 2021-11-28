@@ -1,5 +1,6 @@
 import h5py  as h5
 import numpy as np
+from scipy import ndimage
 import os
 import torch
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -40,14 +41,19 @@ class PhotonLibrary(object):
             with h5.File(lut_file,'r') as f:
                 self.lut = np.array(f['lut'])
                 self.bins = np.array(f['bins'])
+                self.pmt_groups = np.concatenate((np.zeros(90), np.ones(90)))
 
-    def LoadData(self, transform=True, eps=1e-5):
+    def LoadData(self, transform=True, eps=1e-5, extend=False):
         '''
         Load photon library visibility data. Apply scale transform if specified
         '''
         data = self._vis
         if transform:
-            data = self.DataTransform(data)
+            data = self.DataTransform(data, eps)
+            
+        if extend:
+            data = np.expand_dims(data, -1)
+            self.lut = np.expand_dims(self.lut, -1)
 
         return data
 
@@ -65,7 +71,7 @@ class PhotonLibrary(object):
         '''
         v0 = np.log10(eps)
         v1 = np.log10(1.+eps)
-        return np.power(data * (v1 - v0) + v0, 10) - eps
+        return np.power(10, data * (v1 - v0) + v0) - eps
         
     def LoadCoord(self, normalize=True, extend=False):
         '''
@@ -82,38 +88,25 @@ class PhotonLibrary(object):
         if np.isscalar(idx):
             idx = np.array([idx])
         
-        pos_coord = self.VoxID2Coord(idx)
-        pmt_coord = (self._pmt_pos - self._min) / (self._max - self._min)
+        pos_coord = self.VoxID2Coord(idx).astype(np.float32)
+        pmt_coord = ((self._pmt_pos - self._min) / (self._max - self._min)).astype(np.float32)
         
         if normalize:
             pos_coord = 2 * (pos_coord - 0.5)
             pmt_coord = 2 * (pmt_coord - 0.5)
         
         if extend:
-            pos_coord = np.concatenate((np.broadcast_to(np.expand_dims(pos_coord, 1), \
-                (pos_coord.shape[0], pmt_coord.shape[0], pos_coord.shape[1])), \
-                np.broadcast_to(pmt_coord, (pos_coord.shape[0], pmt_coord.shape[0], pmt_coord.shape[1]))), -1)
+            pos_coord = self.ExtendCoord(pos_coord, pmt_coord)
         
         return pos_coord.squeeze()
     
-    def CoordFromIdx(self, idx, normalize=True, extend=False):
+    def ExtendCoord(self, pos_coord, pmt_coord):
         '''
-        Load input coord from data loader index
+        Extend pos coord with pmt_coord for 6D input
         '''
-        if np.isscalar(idx):
-            idx = np.array([idx])
-        
-        pos_coord = self.VoxID2Coord(idx)
-        pmt_coord = (self._pmt_pos - self._min) / (self._max - self._min)
-        
-        if normalize:
-            pos_coord = 2 * (pos_coord - 0.5)
-            pmt_coord = 2 * (pmt_coord - 0.5)
-        
-        if extend:
-            pos_coord = np.concatenate((np.broadcast_to(pos_coord, (180, 3)), pmt_coord), -1)
-        
-        return pos_coord.squeeze()
+        pos_coord = np.broadcast_to(np.expand_dims(pos_coord, 1), (pos_coord.shape[0], pmt_coord.shape[0], pos_coord.shape[1]))
+        pmt_coord = np.broadcast_to(pmt_coord, (pos_coord.shape[0], pmt_coord.shape[0], pmt_coord.shape[1]))
+        return np.concatenate((pos_coord, pmt_coord), -1)
 
     def UniformSample(self,num_points=32,use_numpy=True,use_world_coordinate=False):
         '''
@@ -228,20 +221,19 @@ class PhotonLibrary(object):
         var = abs(np.random.normal(1.0, bias, len(self._vis)))
         self._vis = self._vis * np.expand_dims(var, -1)
 
-    def NoiseAtVoxID(self, vid, delta = 2):
+    def LocalVariation(self, xslice, pmt, window = 5, eps=1e-9, full=False):
         '''
         Compute local visibility value fluctuation at vid
         '''
-        if np.isscalar(vid):
-            vid = np.array(vid)
-        axis = self.VoxID2AxisID(vid)
-        xrange = np.arange(axis[0, 0]-delta, axis[0, 0]+delta+1).astype(int)
-        yrange = np.arange(axis[0, 1]-delta, axis[0, 1]+delta+1).astype(int)
-        zrange = np.arange(axis[0, 2]-delta, axis[0, 2]+delta+1).astype(int)
-        selection = self._vis.reshape((394, 77, 74, -1))[zrange, \
-            yrange, xrange, :].reshape((-1, 180))
+        img_slice = np.reshape(self._vis, (394, 77, 74, -1))[:, :, xslice, pmt].swapaxes(0, 1)
+        local_std = ndimage.generic_filter(img_slice, np.std, size=window)
+        local_mean = ndimage.generic_filter(img_slice, np.mean, size=window)
 
-        return np.std(selection, axis=0) / (np.mean(selection, axis=0)+1e-9) * 100
+        if not full:
+            pos = ((self._pmt_pos[pmt] - self._min) / (self._max - self._min) * self.shape).astype(int)
+            return (local_std / (local_mean + eps) * 100)[pos[1], pos[2]]
+
+        return local_std / (local_mean + eps) * 100
 
     def WeightFromIdx(self, vid):
         '''
@@ -250,10 +242,10 @@ class PhotonLibrary(object):
         vis = self.DataTransform(self.Visibility(vid))
         xid = np.expand_dims(vid % 74, -1)
         bin_id = np.digitize(vis, self.bins) - 1
-        batch_idx = (bin_id + np.concatenate((np.zeros(90), np.ones(90))) * \
+        batch_idx = (bin_id + self.pmt_groups * \
                 len(self.bins) + xid * 2 * len(self.bins)).astype(int)
 
-        return self.lut[batch_idx]
+        return self.lut[batch_idx].astype(np.float32)
 
     def WeightFromIdxSingle(self, vid):
         '''
@@ -262,4 +254,4 @@ class PhotonLibrary(object):
         vis = self.DataTransform(self.Visibility(vid))
         bin_id = np.digitize(vis, self.bins) - 1
 
-        return self.lut[bin_id]
+        return self.lut[bin_id].astype(np.float32)
