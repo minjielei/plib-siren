@@ -220,6 +220,22 @@ class PhotonLibrary(object):
         '''
         var = abs(np.random.normal(1.0, bias, len(self._vis)))
         self._vis = self._vis * np.expand_dims(var, -1)
+        
+    def SmearDataByDistance(self, data):
+        indeces = np.arange(len(data))
+        dist = self.DistanceToPMT(indeces)
+        
+        return data * np.exp(-dist / 300.)
+        
+    def DistanceToPMT(self, idx):
+        '''
+        Compute distance to nearest PMT plane along drift axis given idx
+        '''
+        pos_x = self._min[0] + (self._max[0] - self._min[0]) / self.shape[0] * (idx.astype(int) % self.shape[0] + 0.5)
+        pmt_x1, pmt_x2 = -362.5, -57.5
+        dist1, dist2 = np.abs(pos_x - pmt_x1), np.abs(pos_x - pmt_x2)
+        
+        return np.concatenate((np.transpose([dist1]*90), np.transpose([dist2]*90)), -1)
 
     def LocalVariation(self, xslice, pmt, window = 5, eps=1e-9, full=False):
         '''

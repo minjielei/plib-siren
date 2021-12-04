@@ -5,6 +5,8 @@ import diff_operators
 def image_mse(model_output, gt, weight=1.):
     return {'img_loss': (weight * (model_output['model_out'] - gt['coords']) ** 2).mean()}
 
+def image_mse_avg(model_output, gt, weight=1.):
+    return {'img_loss': (torch.mean(weight, 0) * (torch.mean(model_output['model_out'], 0) - torch.mean(gt['coords'], 0)) ** 2).mean()}
 
 def image_l1(model_output, gt, weight=1.):
     return {'img_loss': (weight * torch.abs(model_output['model_out'] - gt['coords'])).mean()}

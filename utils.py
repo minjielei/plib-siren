@@ -63,7 +63,7 @@ def find_latest_checkpoint(model_dir):
     return latest_file
 
 def plot_losses(total_steps, train_losses, filename):
-    x_steps = np.linspace(0, total_steps, num=total_steps)
+    x_steps = np.linspace(0, total_steps, num=len(train_losses))
     plt.figure(tight_layout=True)
     plt.plot(x_steps, train_losses)
     plt.ylabel('Loss')
