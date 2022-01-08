@@ -9,9 +9,9 @@ import os
 import shutil
 import utils
 
-def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_checkpoint, model_dir, loss_fn, loss_schedules=None):
+def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_checkpoint, model_dir, loss_fn, patience=None):
 
-    optim = torch.optim.AdamW(lr=lr, params=model.parameters(), amsgrad=True)
+    optim = torch.optim.Adam(lr=lr, params=model.parameters())
 
     epoch_start = 0
     total_steps = 0
@@ -35,6 +35,10 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
         os.makedirs(checkpoints_dir)
 
     writer = SummaryWriter(summaries_dir)
+    
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optim, mode='min', factor=0.5, patience=patience, threshold=1e-4, 
+            threshold_mode='rel', cooldown=10, verbose=True)
 
     for epoch in range(epoch_start, epochs):
 
@@ -49,10 +53,6 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
             train_loss = 0.
             for loss_name, loss in losses.items():
                 single_loss = loss.mean()
-
-                if loss_schedules is not None and loss_name in loss_schedules:
-                    writer.add_scalar(loss_name + "_weight", loss_schedules[loss_name](total_steps), total_steps)
-                    single_loss *= loss_schedules[loss_name](total_steps)
 
                 writer.add_scalar(loss_name, single_loss, total_steps)
                 train_loss += single_loss
@@ -78,6 +78,8 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
             optim.step()
 
             total_steps += 1
+            
+        scheduler.step(train_loss)
 
         if not epoch % epochs_til_checkpoint and epoch:
             print('epoch:', epoch )
@@ -90,13 +92,13 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
                         'loss': train_losses,
                         },  os.path.join(checkpoints_dir, 'model_epoch_%04d.pth' % epoch))
             
-            np.savetxt(os.path.join(checkpoints_dir, 'train_losses_epoch_%04d.txt' % epoch),
+            np.savetxt(os.path.join(checkpoints_dir, 'train_losses_current.txt'),
                        np.array(train_losses))
 
-            plt_name = os.path.join(checkpoints_dir, 'total_loss_epoch_%04d.png' % epoch)
+            plt_name = os.path.join(checkpoints_dir, 'total_loss_current.png')
             utils.plot_losses(total_steps, train_losses, plt_name)
 
-    torch.save(model.state_dict(),
+    torch.save({'model_state_dict': model.state_dict()},
                os.path.join(checkpoints_dir, 'model_final.pth'))
     np.savetxt(os.path.join(checkpoints_dir, 'train_losses_final.txt'),
                np.array(train_losses))

@@ -14,7 +14,7 @@ class DataWrapper(DataLoader):
         return self.gt.shape[0]
     
     def __getitem__(self, idx):
-        weights = self.plib.WeightFromIdx(idx)
+        weights = self.plib.WeightByStatVar(idx)
         in_dict = {'idx': idx, 'coords': self.coords[idx], 'weights': weights}
         gt_dict = {'idx': idx, 'coords': self.gt[idx]}
 

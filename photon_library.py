@@ -16,9 +16,9 @@ class PhotonLibrary(object):
 
         with h5.File(plib_file,'r') as f:
             self._vis  = np.array(f['vis'], dtype=np.float32)
-            self._min  = np.array(f['min'])
-            self._max  = np.array(f['max'])
-            self.shape = np.array(f['numvox'])
+            self._min  = np.array(f['min'], dtype=np.float32)
+            self._max  = np.array(f['max'], dtype=np.float32)
+            self.shape = np.array(f['numvox'], dtype=np.float32)
             
         pmt_data = np.loadtxt(pmt_file,skiprows=1,delimiter=',')
         if not (pmt_data[:,0].astype(np.int32) == np.arange(pmt_data.shape[0])).all():
@@ -71,7 +71,7 @@ class PhotonLibrary(object):
         '''
         v0 = np.log10(eps)
         v1 = np.log10(1.+eps)
-        return np.power(10, data * (v1 - v0) + v0) - eps
+        return (10 ** (data * (v1 - v0) + v0)) - eps
         
     def LoadCoord(self, normalize=True, extend=False):
         '''
@@ -196,9 +196,9 @@ class PhotonLibrary(object):
         RETURN
           Length 3 integer array noting the position in discretized index along xyz axis
         '''
-        xid = vid.astype(int) % self.shape[0]
-        yid = ((vid - xid) / self.shape[0]).astype(int) % self.shape[1]
-        zid = ((vid - xid - (yid * self.shape[0])) / (self.shape[0] * self.shape[1])).astype(int) % self.shape[2]
+        xid = vid % self.shape[0]
+        yid = ((vid - xid) // self.shape[0]) % self.shape[1]
+        zid = ((vid - xid - (yid * self.shape[0])) // (self.shape[0] * self.shape[1])) % self.shape[2]
         
         return np.reshape(np.stack([xid,yid,zid], -1), (-1, 3)).astype(np.float32) 
 
@@ -213,6 +213,16 @@ class PhotonLibrary(object):
         axis_id = self.VoxID2AxisID(vid)
         
         return (axis_id + 0.5) / self.shape
+    
+    def VoxID2Position(self, vid):
+        '''
+        Takes a voxel ID and converts to world coordniate
+        INPUT
+        vid - The voxel ID (single integer)          
+        RETURN
+        Length 3 normalized coordinate array
+        '''
+        return self.AxisID2Position(self.VoxID2AxisID(vid))
 
     def SmearData(self, bias):
         '''
@@ -221,21 +231,32 @@ class PhotonLibrary(object):
         var = abs(np.random.normal(1.0, bias, len(self._vis)))
         self._vis = self._vis * np.expand_dims(var, -1)
         
-    def SmearDataByDistance(self, data):
+    def ModDataByDistance(self, data, scale=1000.):
         indeces = np.arange(len(data))
         dist = self.DistanceToPMT(indeces)
         
-        return data * np.exp(-dist / 300.)
+        return data * np.exp(-dist / scale)
         
     def DistanceToPMT(self, idx):
         '''
         Compute distance to nearest PMT plane along drift axis given idx
         '''
         pos_x = self._min[0] + (self._max[0] - self._min[0]) / self.shape[0] * (idx.astype(int) % self.shape[0] + 0.5)
-        pmt_x1, pmt_x2 = -362.5, -57.5
+        pmt_x1, pmt_x2 = -371.07, -49.36
         dist1, dist2 = np.abs(pos_x - pmt_x1), np.abs(pos_x - pmt_x2)
         
         return np.concatenate((np.transpose([dist1]*90), np.transpose([dist2]*90)), -1)
+    
+    def DistanceAtVoxID(self, vid):
+        '''
+        Distance to all PMTs at given vid
+        INPUT
+        vid - The voxel ID (single integer)          
+        RETURN
+        Length 180 array correspond to distance to each PMT at vid
+        '''
+        pos = np.broadcast_to(np.expand_dims(self.VoxID2Position(vid), 1), (len(vid), 180, 3))
+        return (2.4378 / np.linalg.norm(pos - self._pmt_pos, axis=-1)**2).astype(np.float32)
 
     def LocalVariation(self, xslice, pmt, window = 5, eps=1e-9, full=False):
         '''
@@ -251,7 +272,7 @@ class PhotonLibrary(object):
 
         return local_std / (local_mean + eps) * 100
 
-    def WeightFromIdx(self, vid):
+    def WeightFromLUT(self, vid):
         '''
         Weighting factor for data at vid based on the provided weight lut file
         '''
@@ -263,11 +284,23 @@ class PhotonLibrary(object):
 
         return self.lut[batch_idx].astype(np.float32)
 
-    def WeightFromIdxSingle(self, vid):
+    def WeightFromLUTSingle(self, vid):
         '''
         Weighting factor for data at vid based on single version of weight lut file
         '''
         vis = self.DataTransform(self.Visibility(vid))
         bin_id = np.digitize(vis, self.bins) - 1
-
+        
         return self.lut[bin_id].astype(np.float32)
+        
+    def WeightByStatVar(self, vid):
+        '''
+        Weighting factor for data at vid based on statistical variation at that pt
+        '''
+        vis = self.Visibility(vid)
+        weight = vis * 1e6
+        weight[vis==0] = 1.
+        
+        return weight
+        
+        

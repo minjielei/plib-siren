@@ -34,6 +34,7 @@ class PlibSiren():
         self.batch_size = cfg['Training']['batch_size']
         self.num_epochs = cfg['Training']['num_epochs']
         self.lr = cfg['Training']['learning_rate']
+        self.patience = cfg['Training']['patience']
         self.steps_til_summary = cfg['Training']['steps_til_summary']
         self.epochs_til_ckpt = cfg['Training']['epochs_til_checkpoint']
 
@@ -58,7 +59,7 @@ class PlibSiren():
         print('Training...')
         training.train(model=model, train_dataloader=dataloader, epochs=self.num_epochs, lr=self.lr,
                 steps_til_summary=self.steps_til_summary, epochs_til_checkpoint=self.epochs_til_ckpt,
-                model_dir=self.output_dir, loss_fn=loss)
+                model_dir=self.output_dir, loss_fn=loss, patience=self.patience)
 
 if __name__=="__main__":
     cfg_file = 'siren_cfg.yml'

@@ -1,0 +1,19 @@
+FilePath:
+  model_dir: /sdf/home/m/mlei/optical_sim/logs/results_122521
+  experiment_name: calibration_5e3_pe01
+  siren_file: checkpoints/siren_model_final.pth
+  plib_file: plib_data/plib_combined_mod2.h5
+  pmt_file: plib_data/pmt_loc.csv
+Model:
+  in_features: 3
+  out_features: 180
+  hidden_features: 512
+  hidden_layers: 5
+  omega: 30
+Process:
+  pred_file: pred.npy
+  grad_file: grad.npy
+  plt_file: rel_bias_pmt.png
+  plt_data_file: rel_bias_pmt.npy
+  vis_cutoff: 4.5e-5
+  
